@@ -22,6 +22,7 @@ import streamlit as st
 
 PHIST = Path("data/processed/humbets_historical_2023_2025.parquet")
 P26 = Path("data/processed/humbets_2026_governed.parquet")
+FIRST_MODEL_WEEK = 5
 
 st.set_page_config(page_title="HumBets", page_icon="🏈", layout="wide",
                    initial_sidebar_state="collapsed")
@@ -37,12 +38,12 @@ st.markdown(f"""
 --blue:{BLUE};--red:{RED};}}
 .stApp{{background:radial-gradient(circle at 80% -10%,rgba(233,185,73,.10),transparent 26rem),
 radial-gradient(circle at -10% 30%,rgba(109,184,255,.06),transparent 28rem),var(--bg);color:var(--ink)}}
-.block-container{{max-width:1480px;padding-top:1.45rem;padding-bottom:4rem}}
+.block-container{{max-width:1480px;padding-top:2.15rem;padding-bottom:4rem}}
 [data-testid="stMetric"]{{background:linear-gradient(180deg,var(--panel2),var(--panel));
 border:1px solid var(--border);border-radius:16px;padding:14px 16px}}
 [data-testid="stMetricLabel"]{{color:var(--muted)}}
 .hb{{font-size:2.7rem;font-weight:900;letter-spacing:-.055em;line-height:1}} .hb span{{color:var(--gold)}}
-.brand-wrap{{display:flex;justify-content:center;align-items:center;margin:.1rem auto .15rem}}\n.brand-logo{{display:block;width:min(760px,82vw);height:auto}}\n.sub{{color:var(--muted);font-size:.94rem;margin:.2rem 0 1.15rem;text-align:center}}
+.brand-wrap{{display:flex;justify-content:center;align-items:center;margin:0 auto .15rem;padding-top:1.35rem;overflow:visible}}\n.brand-logo{{display:block;width:min(760px,82vw);height:auto}}\n.sub{{color:var(--muted);font-size:.94rem;margin:.2rem 0 1.15rem;text-align:center}}
 .era{{border-radius:16px;padding:13px 16px;margin:.4rem 0 1rem;border:1px solid var(--border)}}
 .era.hist{{background:rgba(109,184,255,.055);border-color:rgba(109,184,255,.22)}}
 .era.live{{background:rgba(233,185,73,.055);border-color:rgba(233,185,73,.25)}}
@@ -185,23 +186,20 @@ def card(r, season):
         if elway_edge: badges += pill("ELWAY EDGE ✓","edgepill")
         badges += ats_pill(r.get("ats_result"))
     else:
-        badges += pill(status,status.lower())
-        for lab,col in [("MARKET","market_ready"),("PBP","pbp_ready"),("QB1","qb1_ready")]:
-            badges += pill(f"{lab} {'✓' if yes(r.get(col)) else '…'}","ok" if yes(r.get(col)) else "wait")
-        # Show Elway model readiness/output for every 2026 week when available.
-        # Governance remains unchanged: only READY/FROZEN rows can receive governed
-        # context/margin badges, and only FROZEN rows can receive ELWAY EDGE ✓.
-        badges += pill(f"ELWAY {'✓' if yes(r.get('elway_ready')) else '…'}","ok" if yes(r.get("elway_ready")) else "wait")
-        if status in {"READY","FROZEN"} and context: badges += pill("CONTEXT CLUES","contextpill")
-        if status in {"READY","FROZEN"} and margin5: badges += pill("5+ MARGIN","marginpill")
-        if live_screen: badges += pill("ELWAY EDGE ✓","edgepill")
-        # ATS appears only after an outcome exists and if a graded result is available.
-        badges += ats_pill(r.get("ats_result"))
+        if int(r["week"]) >= FIRST_MODEL_WEEK:
+            # Public Week 5+ presentation mirrors the historical card vocabulary.
+            # Operational READY / MARKET / PBP / QB validation remains private.
+            governed = status in {"READY", "FROZEN"}
+            if governed and context: badges += pill("CONTEXT CLUES", "contextpill")
+            if governed and margin5: badges += pill("5+ MARGIN", "marginpill")
+            if live_screen: badges += pill("ELWAY EDGE ✓", "edgepill")
+            # ATS appears only after an outcome exists and if a graded result is available.
+            badges += ats_pill(r.get("ats_result"))
 
     meta=" • ".join([str(x) for x in [r.get("gameday"),r.get("gametime"),r.get("stadium")] if has(x)])
-    # Browsing/reference: display available Elway model outputs for all 2026 weeks.
-    # This is display-only and does not change MONITOR/READY/FROZEN governance.
-    show_model = historical or season == 2026
+    # Keep Weeks 1-4 visible as the 2026 MONITOR runway.
+    # Official prospective ELWAY EDGE status still begins in Week 5.
+    show_model = True
     grid=f"""<div class="grid">
     <div><div class="ml">Market</div><div class="mv">{line(r["home_team"],r["away_team"],spread)}</div></div>
     <div><div class="ml">Elway Says</div><div class="mv">{line(r["home_team"],r["away_team"],pred)}</div></div>
@@ -242,6 +240,8 @@ if not available:
     st.stop()
 
 season=st.segmented_control("Season",available,default=max(available),key="season")
+if season is None:
+    season = max(available)
 if season < 2026:
     all_hist=load(PHIST)
     df=all_hist[all_hist.season==season].copy()
@@ -300,8 +300,9 @@ if details:
         "football_distance","high_unusual","retrospective_regime_match","home_margin","ats_result",
         "elway_abs_error","market_abs_error","closer_forecast"] if c in df]
     else:
-        cols=[c for c in ["week","away_team","home_team","pipeline_status","pipeline_reason","market_ready",
-        "pbp_ready","qb1_ready","elway_ready","football_distance","edge_size"] if c in df]
+        # Public Week 5+ details use the same football-facing fields as historical data.
+        cols=[c for c in ["week","away_team","home_team","spread_line","predicted_home_margin","edge_size",
+        "football_distance","high_unusual","frozen_signal","home_score","away_score","home_margin","ats_result"] if c in df]
     st.dataframe(df[cols],use_container_width=True,hide_index=True)
 
 with st.expander("What the labels mean"):
